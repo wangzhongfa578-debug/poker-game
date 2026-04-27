@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=1.5">
+  <title>九人桌 · 德州扑克</title>
+  <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#0a0f1e;font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;color:#e0e0e0;user-select:none;}
+    .game-wrapper{width:100%;max-width:1000px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+    .top-bar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;width:100%;}
+    .room-panel{background:#1e2a3a;border-radius:16px;padding:12px 18px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;box-shadow:0 4px 12px rgba(0,0,0,0.5);}
+    .room-panel input{padding:8px 12px;border-radius:8px;border:none;background:#0f1722;color:#ffd966;font-weight:600;width:140px;text-align:center;font-size:0.9rem;}
+    .room-panel button{padding:8px 16px;border-radius:20px;border:none;font-weight:700;cursor:pointer;background:#2c5282;color:white;transition:0.2s;font-size:0.85rem;}
+    .room-panel button:hover{background:#3b6da5;}
+    .btn-copy{background:#b8860b; margin-left:5px;}
+    .badge-host{background:#e2b13b;color:#000;padding:3px 10px;border-radius:14px;font-weight:700;font-size:0.75rem;}
+    .table-wrap{position:relative;width:100%;max-width:750px;aspect-ratio:1.6/1;background:radial-gradient(ellipse,#1e6b3b 0%,#0f4522 60%,#082a13 100%);border-radius:50%/45%;border:5px solid #4a2c0b;box-shadow:0 0 0 6px #2b1800,0 0 30px rgba(0,0,0,0.7);margin:5px 0;}
+    .seat{position:absolute;display:flex;flex-direction:column;align-items:center;width:85px;transform:translate(-50%,-50%);transition:0.2s;}
+    .seat.turn-active .player-box{border-color:#ffd700;box-shadow:0 0 18px gold;}
+    .player-box{background:rgba(0,0,0,0.8);border:2px solid #5a6b7a;border-radius:12px;padding:4px 8px;font-size:0.65rem;text-align:center;color:white;backdrop-filter:blur(4px);min-width:70px;}
+    .player-name{font-weight:700;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;}
+    .player-chips{color:#ffd966;}
+    .cards-mini{display:flex;gap:2px;margin-top:3px;}
+    .card-tiny{width:22px;height:32px;background:white;border-radius:3px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.65rem;box-shadow:1px 2px 5px black;color:black;}
+    .card-tiny.red{color:#c41a1a;}
+    .card-back{background:linear-gradient(45deg,#1e3c72,#2a5298);border:1px solid #ccc;color:transparent;}
+    .community{position:absolute;top:48%;left:50%;transform:translate(-50%,-50%);display:flex;gap:5px;}
+    .comm-card{width:38px;height:54px;background:white;border-radius:5px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;box-shadow:2px 3px 10px black;}
+    .comm-card.placeholder{background:rgba(255,255,255,0.1);border:2px dashed #aaa;box-shadow:none;}
+    .pot{position:absolute;top:37%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.7);padding:4px 16px;border-radius:16px;color:#ffd966;font-weight:700;font-size:0.85rem;}
+    .actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;}
+    .btn{padding:8px 16px;border-radius:20px;border:none;font-weight:700;cursor:pointer;color:white;transition:0.2s;font-size:0.85rem;background:#2c5282;}
+    .btn:disabled{opacity:0.35;pointer-events:none;}
+    .btn-fold{background:#5e5e5e;}
+    .btn-raise{background:#c05621;}
+    .btn-allin{background:#b91c1c;}
+    .log{width:100%;max-width:750px;background:#111a28;border-radius:10px;padding:8px 12px;font-size:0.75rem;max-height:70px;overflow-y:auto;color:#ccc;}
+    .sys{color:#ffd966;}.act{color:#a6d0ff;}
+    .small{font-size:0.7rem;color:#aaa;}
+    .admin-panel{background:#1e2a3a;border-radius:12px;padding:8px 15px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:5px;}
+    .admin-panel label{font-size:0.75rem;color:#ccc;}
+    .admin-panel input{width:70px;padding:4px;border-radius:6px;border:none;background:#0f1722;color:#ffd966;text-align:center;}
+  </style>
+</head>
+<body>
+<div class="game-wrapper">
+  <div id="deployWarning" style="background:#b91c1c;color:white;padding:8px 16px;border-radius:10px;display:none;text-align:center;margin-bottom:6px;">
+    ⚠️ 当前为本地文件，邀请链接不可用。请部署到线上服务器（如 GitHub Pages）。
+  </div>
+  <div class="top-bar">
+    <div class="room-panel" id="roomPanel">
+      <span id="roomIdDisplay" class="small">未连接</span>
+      <input id="roomInput" placeholder="输入对方ID" maxlength="30">
+      <button id="btnJoin">加入房间</button>
+      <button id="btnHost">创建房间</button>
+      <button id="btnCopyLink" class="btn-copy" style="display:none;">📋 复制邀请链接</button>
+    </div>
+    <button id="btnStart" class="btn" disabled style="background:#b8860b;">开始牌局</button>
+  </div>
+
+  <!-- 房主后台设置面板（仅房主可见） -->
+  <div id="adminPanel" class="admin-panel" style="display:none;">
+    <span style="color:#ffd966;font-weight:700;">⚙️ 后台设置</span>
+    <label>初始筹码</label>
+    <input id="setChips" type="number" value="1000" min="100" step="100">
+    <label>小盲注</label>
+    <input id="setSB" type="number" value="5" min="1" step="1">
+    <label>大盲注</label>
+    <input id="setBB" type="number" value="10" min="2" step="1">
+    <button id="btnApplySettings" class="btn" style="background:#b8860b;">应用设置（下局生效）</button>
+  </div>
+
+  <div class="table-wrap" id="table">
+    <div class="community" id="community"></div>
+    <div class="pot" id="potDisplay">底池: 0</div>
+  </div>
+  <div class="actions" id="actionPanel">
+    <button class="btn btn-fold" id="btnFold" disabled>弃牌</button>
+    <button class="btn" id="btnCheckCall" disabled>过牌/跟注</button>
+    <button class="btn btn-raise" id="btnRaise" disabled>加注</button>
+    <button class="btn btn-allin" id="btnAllin" disabled>全下</button>
+  </div>
+  <div class="log" id="logPanel">🔗 创建房间或输入对方ID加入</div>
+</div>
+<script>
+  (function() {
+    // ----- 游戏设置（房主可调）-----
+    let customSettings = {
+      startChips: 1000,
+      smallBlind: 5,
+      bigBlind: 10
+    };
+
+    const SEAT_COUNT = 9;
+
+    // ----- DOM -----
+    const table = document.getElementById('table');
+    const communityDiv = document.getElementById('community');
+    const potDisplay = document.getElementById('potDisplay');
+    const logPanel = document.getElementById('logPanel');
+    const btnStart = document.getElementById('btnStart');
+    const btnFold = document.getElementById('btnFold');
+    const btnCheckCall = document.getElementById('btnCheckCall');
+    const btnRaise = document.getElementById('btnRaise');
+    const btnAllin = document.getElementById('btnAllin');
+    const roomInput = document.getElementById('roomInput');
+    const btnJoin = document.getElementById('btnJoin');
+    const btnHost = document.getElementById('btnHost');
+    const btnCopyLink = document.getElementById('btnCopyLink');
+    const roomIdDisplay = document.getElementById('roomIdDisplay');
+    const deployWarning = document.getElementById('deployWarning');
+    const adminPanel = document.getElementById('adminPanel');
+    const setChips = document.getElementById('setChips');
+    const setSB = document.getElementById('setSB');
+    const setBB = document.getElementById('setBB');
+    const btnApplySettings = document.getElementById('btnApplySettings');
+
+    // 检测是否是本地文件
+    if (window.location.protocol === 'file:') {
+      deployWarning.style.display = 'block';
+    }
+
+    // ----- 全局状态 -----
+    let peer = null;
+    let connections = {};
+    let myPeerId = null;
+    let isHost = false;
+    let roomId = null;
+
+    let gameState = {
+      phase: 'lobby',
+      players: [],
+      communityCards: [],
+      pot: 0,
+      currentBet: 0,
+      dealerIndex: 0,
+      turnSeat: 0,
+      waitingFor: null,
+      deck: [],
+      roundLog: []
+    };
+
+    let mySeatIndex = -1;
+    let myPlayerId = null;
+
+    // ----- 工具 -----
+    function log(msg, clazz='sys') {
+      const div = document.createElement('div');
+      div.className = clazz;
+      div.textContent = msg;
+      logPanel.appendChild(div);
+      logPanel.scrollTop = logPanel.scrollHeight;
+    }
+    function createDeck() {
+      const suits = ['s','h','d','c'];
+      const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+      const deck = [];
+      for (let s of suits) for (let r of ranks) deck.push({rank:r, suit:s});
+      return shuffle(deck);
+    }
+    function shuffle(arr) {
+      for (let i=arr.length-1;i>0;i--) {
+        const j = Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]] = [arr[j],arr[i]];
+      }
+      return arr;
+    }
+    function suitSymbol(s) { return {s:'♠',h:'♥',d:'♦',c:'♣'}[s]||s; }
+    function getSeatPosition(i) {
+      const total = SEAT_COUNT;
+      const angle = (i * (360/total) - 90) * (Math.PI/180);
+      const rx = 42, ry = 38;
+      return {left:`${50 + rx * Math.cos(angle)}%`, top:`${50 + ry * Math.sin(angle)}%`};
+    }
+
+    // ----- 渲染 -----
+    function renderSeats() {
+      document.querySelectorAll('.seat').forEach(s=>s.remove());
+      for (let i=0; i<SEAT_COUNT; i++) {
+        const seatDiv = document.createElement('div');
+        seatDiv.className = 'seat';
+        seatDiv.id = `seat-${i}`;
+        const pos = getSeatPosition(i);
+        seatDiv.style.left = pos.left;
+        seatDiv.style.top = pos.top;
+        const player = gameState.players.find(p=>p.seatIndex===i && !p.disconnected);
+        if (player) {
+          seatDiv.innerHTML = `
+            <div class="player-box">
+              <div class="player-name">${player.name}</div>
+              <div class="player-chips">${player.chips}</div>
+            </div>
+            <div class="cards-mini" id="cards-${i}"></div>
+          `;
+        } else {
+          seatDiv.innerHTML = `<div class="player-box"><div class="player-name" style="color:#888;">空位</div></div>`;
+        }
+        if (gameState.turnSeat === i && gameState.phase!=='lobby') seatDiv.classList.add('turn-active');
+        table.appendChild(seatDiv);
+      }
+    }
+    function renderCards(containerId, cards, faceDown=true) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      container.innerHTML = '';
+      if (!cards) return;
+      for (let card of cards) {
+        const div = document.createElement('div');
+        div.className = 'card-tiny';
+        if (faceDown) {
+          div.classList.add('card-back');
+        } else {
+          div.textContent = card.rank + suitSymbol(card.suit);
+          if (card.suit==='h'||card.suit==='d') div.classList.add('red');
+        }
+        container.appendChild(div);
+      }
+    }
+    function renderCommunity() {
+      communityDiv.innerHTML = '';
+      for (let i=0;i<5;i++) {
+        const card = gameState.communityCards[i];
+        const div = document.createElement('div');
+        div.className = 'comm-card';
+        if (card) {
+          div.textContent = card.rank + suitSymbol(card.suit);
+          if (card.suit==='h'||card.suit==='d') div.style.color='#c41a1a';
+        } else {
+          div.classList.add('placeholder');
+        }
+        communityDiv.appendChild(div);
+      }
+    }
+    function updatePot() { potDisplay.textContent = `底池: ${gameState.pot}`; }
+    function refreshUI() {
+      renderSeats();
+      for (let p of gameState.players) {
+        if (p.seatIndex>=0) {
+          const isSelf = p.id === myPlayerId;
+          renderCards(`cards-${p.seatIndex}`, p.hand, !isSelf && gameState.phase!=='showdown');
+        }
+      }
+      renderCommunity();
+      updatePot();
+      updateActionButtons();
+    }
+    function updateActionButtons() {
+      const player = gameState.players.find(p=>p.id===myPlayerId);
+      const canAct = gameState.phase !== 'lobby' && gameState.phase !== 'end' &&
+                     gameState.waitingFor === mySeatIndex && player && !player.folded && !player.allIn;
+      btnFold.disabled = !canAct;
+      btnCheckCall.disabled = !canAct;
+      btnRaise.disabled = !canAct;
+      btnAllin.disabled = !canAct;
+      if (canAct) {
+        const callAmt = gameState.currentBet - (player.roundBet||0);
+        btnCheckCall.textContent = callAmt===0 ? '过牌' : `跟注 ${callAmt}`;
+        btnRaise.textContent = `加注 ${Math.max(gameState.currentBet*2, customSettings.bigBlind*2)}`;
+      } else {
+        btnCheckCall.textContent = '过牌/跟注';
+        btnRaise.textContent = '加注';
+      }
+      btnStart.disabled = !isHost || gameState.phase!=='lobby';
+    }
+
+    // ----- 网络 -----
+    function broadcast(data) {
+      for (let conn of Object.values(connections)) if (conn.open) conn.send(data);
+    }
+    function sendToHost(data) {
+      if (connections[roomId]) connections[roomId].send(data);
+    }
+    function handleMessage(conn, data) {
+      if (data.type === 'STATE' && !isHost) {
+        gameState = data.state;
+        mySeatIndex = gameState.players.find(p=>p.id===myPlayerId)?.seatIndex ?? -1;
+        if (data.settings) customSettings = data.settings;
+        refreshUI();
+        log(data.log || '状态更新', 'sys');
+      } else if (data.type === 'ACTION' && isHost) {
+        handlePlayerAction(data.playerId, data.action, data.amount);
+      } else if (data.type === 'JOIN' && isHost) {
+        addPlayerToGame(data.playerId, data.playerName, conn);
+      } else if (data.type === 'WELCOME' && !isHost) {
+        mySeatIndex = data.seatIndex;
+        myPlayerId = data.playerId;
+        log(`加入成功，座位 ${mySeatIndex+1}`);
+      } else if (data.type === 'SETTINGS' && !isHost) {
+        customSettings = data.settings;
+        log('房主更新了游戏设置');
+      }
+    }
+    function addPlayerToGame(playerId, playerName, conn) {
+      if (gameState.players.some(p=>p.id===playerId)) return;
+      const emptySeat = findEmptySeat();
+      if (emptySeat===-1) { conn?.send({type:'ERROR',msg:'房间已满'}); return; }
+      const player = {
+        id:playerId, name:playerName, seatIndex:emptySeat,
+        chips: customSettings.startChips, hand:[], folded:false,
+        allIn:false, roundBet:0, disconnected:false
+      };
+      gameState.players.push(player);
+      if (conn) conn.send({type:'WELCOME', seatIndex:emptySeat, playerId:playerId});
+      broadcastState('玩家加入');
+    }
+    function findEmptySeat() {
+      for (let i=0;i<SEAT_COUNT;i++) if (!gameState.players.some(p=>p.seatIndex===i&&!p.disconnected)) return i;
+      return -1;
+    }
+    function broadcastState(logMsg) {
+      if (!isHost) return;
+      const stateCopy = JSON.parse(JSON.stringify(gameState));
+      broadcast({type:'STATE', state:stateCopy, log:logMsg, settings: customSettings});
+      refreshUI();
+    }
+
+    // ----- 游戏逻辑（Host）-----
+    function startNewRound() {
+      if (!isHost || gameState.players.length<2) return;
+      gameState.phase = 'preflop';
+      gameState.deck = createDeck();
+      gameState.communityCards = [];
+      gameState.pot = 0;
+      gameState.currentBet = 0;
+      for (let p of gameState.players) { p.hand=[]; p.folded=false; p.allIn=false; p.roundBet=0; }
+      for (let p of gameState.players) p.hand = [gameState.deck.pop(), gameState.deck.pop()];
+      const sbIdx = (gameState.dealerIndex+1)%SEAT_COUNT;
+      const bbIdx = (gameState.dealerIndex+2)%SEAT_COUNT;
+      const sbPlayer = gameState.players.find(p=>p.seatIndex===sbIdx);
+      const bbPlayer = gameState.players.find(p=>p.seatIndex===bbIdx);
+      if (sbPlayer) {
+        let amt = Math.min(customSettings.smallBlind, sbPlayer.chips);
+        sbPlayer.chips -= amt; sbPlayer.roundBet = amt; gameState.pot += amt;
+      }
+      if (bbPlayer) {
+        let amt = Math.min(customSettings.bigBlind, bbPlayer.chips);
+        bbPlayer.chips -= amt; bbPlayer.roundBet = amt; gameState.pot += amt;
+        gameState.currentBet = amt;
+      }
+      gameState.turnSeat = (gameState.dealerIndex+3)%SEAT_COUNT;
+      gameState.waitingFor = gameState.turnSeat;
+      broadcastState('新的一局开始');
+    }
+    function handlePlayerAction(playerId, action, amount) {
+      const player = gameState.players.find(p=>p.id===playerId);
+      if (!player || player.seatIndex!==gameState.waitingFor) return;
+      const callAmt = gameState.currentBet - player.roundBet;
+      if (action==='fold') {
+        player.folded = true;
+        broadcastState(`${player.name} 弃牌`);
+      } else if (action==='call') {
+        const pay = Math.min(callAmt, player.chips);
+        player.chips -= pay; player.roundBet += pay; gameState.pot += pay;
+        if (player.chips===0) player.allIn=true;
+        broadcastState(`${player.name} ${pay===0?'过牌':'跟注 '+pay}`);
+      } else if (action==='raise') {
+        const raiseBy = Math.max(amount||customSettings.bigBlind*2, gameState.currentBet*2);
+        const total = callAmt + raiseBy;
+        const pay = Math.min(total, player.chips);
+        player.chips -= pay; player.roundBet += pay; gameState.pot += pay;
+        gameState.currentBet = player.roundBet;
+        if (player.chips===0) player.allIn=true;
+        broadcastState(`${player.name} 加注到 ${player.roundBet}`);
+      } else if (action==='allin') {
+        const pay = player.chips;
+        player.chips=0; player.roundBet+=pay; gameState.pot+=pay; player.allIn=true;
+        if (player.roundBet > gameState.currentBet) gameState.currentBet = player.roundBet;
+        broadcastState(`${player.name} 全下 ${pay}`);
+      }
+      nextTurn();
+    }
+    function nextTurn() {
+      const activePlayers = gameState.players.filter(p=>!p.folded && !p.allIn && !p.disconnected);
+      if (activePlayers.length <= 1 || allBetsMatched()) {
+        advancePhase();
+      } else {
+        let next = (gameState.waitingFor+1)%SEAT_COUNT;
+        while (!gameState.players.some(p=>p.seatIndex===next && !p.folded && !p.allIn && !p.disconnected)) next = (next+1)%SEAT_COUNT;
+        gameState.turnSeat = next;
+        gameState.waitingFor = next;
+        broadcastState('轮到下一位');
+      }
+    }
+    function allBetsMatched() {
+      for (let p of gameState.players) if (!p.folded && !p.allIn && !p.disconnected && p.roundBet!==gameState.currentBet) return false;
+      return true;
+    }
+    function advancePhase() {
+      for (let p of gameState.players) p.roundBet=0;
+      gameState.currentBet=0;
+      if (gameState.phase==='preflop') { gameState.deck.pop(); gameState.communityCards.push(gameState.deck.pop(),gameState.deck.pop(),gameState.deck.pop()); gameState.phase='flop'; }
+      else if (gameState.phase==='flop') { gameState.deck.pop(); gameState.communityCards.push(gameState.deck.pop()); gameState.phase='turn'; }
+      else if (gameState.phase==='turn') { gameState.deck.pop(); gameState.communityCards.push(gameState.deck.pop()); gameState.phase='river'; }
+      else if (gameState.phase==='river') { showdown(); return; }
+      gameState.turnSeat = (gameState.dealerIndex+1)%SEAT_COUNT;
+      gameState.waitingFor = gameState.turnSeat;
+      broadcastState('进入下一轮');
+    }
+    function showdown() {
+      gameState.phase='showdown';
+      const winners = gameState.players.filter(p=>!p.folded && !p.disconnected);
+      if (winners.length>0) {
+        const share = Math.floor(gameState.pot/winners.length);
+        winners.forEach(p=>p.chips+=share);
+        gameState.pot = 0;
+      }
+      broadcastState('摊牌，底池平分');
+      setTimeout(()=>{
+        gameState.phase='lobby';
+        gameState.dealerIndex = (gameState.dealerIndex+1)%SEAT_COUNT;
+        broadcastState('牌局结束，等待下一局');
+      },3000);
+    }
+
+    // ----- 邀请链接与后台设置 -----
+    function getInviteLink() {
+      return window.location.origin + window.location.pathname + '?room=' + roomId;
+    }
+    function copyInviteLink() {
+      if (window.location.protocol === 'file:') {
+        alert('当前为本地文件，无法生成有效链接。\n请将网页部署到线上服务器（如 GitHub Pages），然后再使用邀请功能。');
+        return;
+      }
+      const link = getInviteLink();
+      navigator.clipboard.writeText(link).then(()=> log('邀请链接已复制到剪贴板！')).catch(()=> prompt('复制失败，手动复制:', link));
+    }
+    function applySettings() {
+      if (!isHost) return;
+      customSettings.startChips = parseInt(setChips.value) || 1000;
+      customSettings.smallBlind = parseInt(setSB.value) || 5;
+      customSettings.bigBlind = parseInt(setBB.value) || 10;
+      broadcast({type:'SETTINGS', settings: customSettings});
+      log(`设置已更新：初始筹码${customSettings.startChips}，小盲${customSettings.smallBlind}，大盲${customSettings.bigBlind}（下局生效）`);
+    }
+
+    // ----- 事件绑定 -----
+    btnJoin.onclick = () => {
+      const rid = roomInput.value.trim();
+      if (!rid) return;
+      connectToRoom(rid);
+    };
+    btnHost.onclick = async () => {
+      if (peer) peer.destroy();
+      peer = new Peer();
+      await new Promise(res=>peer.on('open', id=>{ myPeerId=id; res(); }));
+      roomId = myPeerId;
+      isHost = true;
+      myPlayerId = myPeerId;
+      roomIdDisplay.textContent = `房间 ID: ${roomId}`;
+      btnCopyLink.style.display = 'inline-block';
+      adminPanel.style.display = 'flex';
+      log(`房间已创建，点击"复制邀请链接"分享给朋友`);
+      gameState.phase='lobby';
+      addPlayerToGame(myPeerId, '房主', null);
+      peer.on('connection', (conn) => {
+        connections[conn.peer] = conn;
+        conn.on('data', data => handleMessage(conn, data));
+        conn.on('open', ()=> log('新玩家已连接'));
+      });
+      btnStart.disabled = false;
+      refreshUI();
+    };
+    btnCopyLink.onclick = copyInviteLink;
+    btnApplySettings.onclick = applySettings;
+    function connectToRoom(rid) {
+      if (peer) peer.destroy();
+      peer = new Peer();
+      peer.on('open', id => {
+        myPeerId = id;
+        myPlayerId = id;
+        const conn = peer.connect(rid, {reliable:true});
+        connections[rid] = conn;
+        conn.on('open', ()=>{
+          roomId = rid;
+          roomIdDisplay.textContent = `已连接: ${rid}`;
+          conn.send({type:'JOIN', playerId:myPeerId, playerName:'玩家'});
+        });
+        conn.on('data', data => handleMessage(conn, data));
+      });
+    }
+    btnFold.onclick = ()=> sendToHost({type:'ACTION', playerId:myPlayerId, action:'fold'});
+    btnCheckCall.onclick = ()=> sendToHost({type:'ACTION', playerId:myPlayerId, action:'call'});
+    btnRaise.onclick = ()=> sendToHost({type:'ACTION', playerId:myPlayerId, action:'raise', amount:customSettings.bigBlind*2});
+    btnAllin.onclick = ()=> sendToHost({type:'ACTION', playerId:myPlayerId, action:'allin'});
+    btnStart.onclick = ()=> { if(isHost) startNewRound(); };
+
+    // 自动通过URL参数加入房间
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoRoom = urlParams.get('room');
+    if (autoRoom) {
+      roomInput.value = autoRoom;
+      log(`检测到邀请链接，正在加入房间 ${autoRoom}...`);
+      setTimeout(() => connectToRoom(autoRoom), 500);
+    } else {
+      log('欢迎！创建房间或输入对方ID加入');
+    }
+
+    refreshUI();
+  })();
+</script>
+</body>
+</html>
